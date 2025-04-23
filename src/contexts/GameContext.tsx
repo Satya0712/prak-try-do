@@ -133,6 +133,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         currentPlayer: player
       }));
       
+      setIsCreator(false);  // Explicitly set to false for joiners
       return true;
     }
     return false;
@@ -140,7 +141,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // Start the game (only available to room creator)
   const startGame = () => {
-    if (!gameState.room || !isCreator) return;
+    if (!gameState.room) return;
     
     // Select a random player to draw first
     const players = [...gameState.room.players];

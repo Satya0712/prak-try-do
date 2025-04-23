@@ -19,6 +19,13 @@ export const GameRoom = () => {
   
   const { room, currentPlayer, wordOptions, timeLeft } = gameState;
   
+  // For debugging
+  useEffect(() => {
+    console.log("Current player:", currentPlayer);
+    console.log("Is creator:", isCreator);
+    console.log("Room status:", room?.status);
+  }, [currentPlayer, isCreator, room]);
+  
   // If room or player is not set, redirect to home
   useEffect(() => {
     if (!room || !currentPlayer) {
@@ -38,6 +45,7 @@ export const GameRoom = () => {
   const isGameOver = room.status === 'gameOver';
   
   const handleStartGame = () => {
+    console.log("Starting game...");
     startGame();
   };
   
@@ -113,7 +121,7 @@ export const GameRoom = () => {
                   <Button 
                     className="mx-auto bg-game-primary hover:bg-game-secondary"
                     onClick={handleStartGame}
-                    disabled={room.players.length < 2}
+                    disabled={room.players.length < 1} // Changed from 2 to 1 to allow testing with just the creator
                   >
                     <Play className="mr-2 h-4 w-4" /> Start Game
                   </Button>
