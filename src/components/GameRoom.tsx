@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGame } from '@/contexts/GameContext';
@@ -8,9 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Play, Clock, Crown } from 'lucide-react';
+import { toast } from "@/components/ui/use-toast";
 
 export const GameRoom = () => {
-  const { gameState, isCreator, startGame, submitGuess, selectWord, leaveRoom, syncRoomState } = useGame();
+  const { gameState, isCreator, startGame, submitGuess, selectWord, leaveRoom, syncRoomState, nextRound } = useGame();
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
   const [guess, setGuess] = useState('');
@@ -23,6 +25,7 @@ export const GameRoom = () => {
     console.log("Current player:", currentPlayer);
     console.log("Is creator:", isCreator);
     console.log("Room status:", room?.status);
+    console.log("Room players:", room?.players);
   }, [currentPlayer, isCreator, room]);
   
   // If room or player is not set, redirect to home
@@ -73,6 +76,15 @@ export const GameRoom = () => {
   const handleLeaveRoom = () => {
     leaveRoom();
     navigate('/');
+  };
+
+  const handleNextRound = () => {
+    console.log("Initiating next round");
+    nextRound();
+    toast({
+      title: "Next Round",
+      description: `Starting round ${room.currentRound + 1} of ${room.totalRounds}`,
+    });
   };
 
   const formatTimeLeft = () => {
@@ -301,7 +313,7 @@ export const GameRoom = () => {
             </CardContent>
             {isCreator && (
               <CardFooter>
-                <Button className="mx-auto" onClick={() => console.log('Next round')}>
+                <Button className="mx-auto" onClick={handleNextRound}>
                   Next Round
                 </Button>
               </CardFooter>

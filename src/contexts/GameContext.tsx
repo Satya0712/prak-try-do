@@ -15,6 +15,7 @@ interface GameContextType {
   setPlayerName: (name: string) => void;
   isCreator: boolean;
   syncRoomState: () => void;
+  nextRound: () => void;
 }
 
 const mockWords = [
@@ -274,6 +275,87 @@ export function GameProvider({ children }: { children: ReactNode }) {
     console.log("Game started, updated room:", updatedRoom);
   };
 
+  // Next round function
+  const nextRound = () => {
+    if (!gameState.room) return;
+
+    // Only proceed if we're in roundEnd status
+    if (gameState.room.status !== 'roundEnd') {
+      console.log("Cannot proceed to next round - current status:", gameState.room.status);
+      return;
+    }
+    
+    const nextRoundNumber = gameState.room.currentRound + 1;
+    console.log("Moving to round:", nextRoundNumber);
+    
+    // Check if game should end
+    if (nextRoundNumber > gameState.room.totalRounds) {
+      const gameOverRoom: Room = {
+        ...gameState.room,
+        status: 'gameOver',
+        currentRound: gameState.room.totalRounds, // Stay at final round number
+      };
+      
+      // Update in mock storage
+      mockRoomsStorage[gameOverRoom.code] = gameOverRoom;
+      
+      setGameState(prevState => ({
+        ...prevState,
+        room: gameOverRoom,
+      }));
+      
+      console.log("Game over, final scores:", gameOverRoom.players.map(p => `${p.name}: ${p.score}`).join(', '));
+      return;
+    }
+    
+    // Choose next player to draw
+    const currentDrawerIndex = gameState.room.players.findIndex(p => p.isDrawing);
+    const nextDrawerIndex = (currentDrawerIndex + 1) % gameState.room.players.length;
+    
+    const updatedPlayers = gameState.room.players.map((player, index) => ({
+      ...player,
+      isDrawing: index === nextDrawerIndex
+    }));
+    
+    const nextPlayer = updatedPlayers[nextDrawerIndex];
+    
+    const updatedRoom: Room = {
+      ...gameState.room,
+      status: 'playing',
+      currentRound: nextRoundNumber,
+      players: updatedPlayers,
+      currentDrawingPlayer: nextPlayer,
+      guesses: [],
+      currentWord: undefined, // Clear the word
+    };
+    
+    // Update in mock storage
+    mockRoomsStorage[updatedRoom.code] = updatedRoom;
+    
+    // If the current user is the drawing player, give them word options
+    if (gameState.currentPlayer && gameState.currentPlayer.id === nextPlayer.id) {
+      // Randomly select 3 words from the mock list
+      const wordOptions = mockWords
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 3);
+      
+      setGameState(prevState => ({
+        ...prevState,
+        room: updatedRoom,
+        wordOptions,
+        guesses: []
+      }));
+    } else {
+      setGameState(prevState => ({
+        ...prevState,
+        room: updatedRoom,
+        guesses: []
+      }));
+    }
+    
+    console.log("Started round", nextRoundNumber, "with drawer:", nextPlayer.name);
+  };
+
   // Submit a guess for the current word
   const submitGuess = (guess: string): GuessResult => {
     if (!gameState.room || !gameState.currentPlayer || !gameState.room.currentWord) {
@@ -360,7 +442,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const selectWord = (word: string) => {
     if (!gameState.room || !gameState.currentPlayer?.isDrawing) return;
     
-    const updatedRoom = {
+    const updatedRoom: Room = {
       ...gameState.room,
       currentWord: word,
       timeLeft: gameState.room.timePerRound
@@ -466,7 +548,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           clearInterval(timerInterval);
           // Handle round end - in a real app, this would be done by the server
           
-          const updatedRoom = {
+          const updatedRoom: Room = {
             ...prevState.room,
             status: 'roundEnd',
             timeLeft: 0
@@ -502,7 +584,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     leaveRoom,
     setPlayerName,
     isCreator,
-    syncRoomState
+    syncRoomState,
+    nextRound
   };
 
   return (
