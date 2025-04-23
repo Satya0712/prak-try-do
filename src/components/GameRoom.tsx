@@ -26,7 +26,8 @@ export const GameRoom = () => {
     console.log("Is creator:", isCreator);
     console.log("Room status:", room?.status);
     console.log("Room players:", room?.players);
-  }, [currentPlayer, isCreator, room]);
+    console.log("Last sync:", gameState.lastSync);
+  }, [currentPlayer, isCreator, room, gameState.lastSync]);
   
   // If room or player is not set, redirect to home
   useEffect(() => {

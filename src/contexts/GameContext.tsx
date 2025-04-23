@@ -36,7 +36,8 @@ const initialGameState: GameState = {
   wordOptions: null,
   timeLeft: 0,
   guesses: [],
-  isConnected: false
+  isConnected: false,
+  lastSync: Date.now()
 };
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -59,10 +60,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     // Simulating connection
     setGameState(prevState => ({ ...prevState, isConnected: true }));
     
-    // Start syncing room state every 2 seconds
+    // Start syncing room state more frequently (every 1 second)
     const interval = setInterval(() => {
       syncRoomState();
-    }, 2000);
+    }, 1000);
     
     setSyncInterval(interval);
     
@@ -81,26 +82,32 @@ export function GameProvider({ children }: { children: ReactNode }) {
     
     const roomCode = gameState.room.code;
     if (mockRoomsStorage[roomCode]) {
-      console.log("Syncing room state:", mockRoomsStorage[roomCode]);
+      const updatedRoom = mockRoomsStorage[roomCode];
       
-      // Update local state with the "server" state
-      setGameState(prevState => {
-        const updatedRoom = mockRoomsStorage[roomCode];
+      // Only update if the room has been updated since last sync
+      if (!gameState.lastSync || (updatedRoom.lastUpdated && updatedRoom.lastUpdated > gameState.lastSync)) {
+        console.log("Syncing room state:", JSON.stringify(updatedRoom, circularReplacer()));
         
         // Find the current player in the updated room
         const updatedCurrentPlayer = updatedRoom.players.find(
-          p => p.id === prevState.currentPlayer?.id
+          p => p.id === gameState.currentPlayer?.id
         );
         
-        return {
+        // Get current drawing player based on ID
+        const currentDrawingPlayer = updatedRoom.currentDrawingPlayerId ? 
+          updatedRoom.players.find(p => p.id === updatedRoom.currentDrawingPlayerId) : 
+          undefined;
+        
+        setGameState(prevState => ({
           ...prevState,
           room: updatedRoom,
           currentPlayer: updatedCurrentPlayer || prevState.currentPlayer,
           currentWord: updatedRoom.currentWord || prevState.currentWord,
           timeLeft: updatedRoom.timeLeft || prevState.timeLeft,
-          guesses: [...(updatedRoom.guesses || [])]
-        };
-      });
+          guesses: [...(updatedRoom.guesses || [])],
+          lastSync: Date.now()
+        }));
+      }
     }
   };
 
@@ -125,7 +132,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       totalRounds: rounds,
       timePerRound: timePerRound,
       status: 'waiting',
-      guesses: []
+      guesses: [],
+      lastUpdated: Date.now()
     };
     
     // Store in mock storage
@@ -135,12 +143,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setGameState(prevState => ({
       ...prevState,
       room: newRoom,
-      currentPlayer: player
+      currentPlayer: player,
+      lastSync: Date.now()
     }));
     
     setIsCreator(true);
     console.log("Room created with code:", roomCode);
-    console.log("Mock rooms:", mockRoomsStorage);
+    console.log("Mock rooms:", JSON.stringify(mockRoomsStorage, circularReplacer()));
     
     return newRoom;
   };
@@ -149,7 +158,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const joinRoom = (code: string, playerName: string): boolean => {
     // Check if room exists in our mock storage
     if (mockRoomsStorage[code]) {
-      console.log("Room found:", mockRoomsStorage[code]);
+      console.log("Room found:", JSON.stringify(mockRoomsStorage[code], circularReplacer()));
       const playerId = uuidv4();
       
       const player: Player = {
@@ -164,7 +173,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const updatedPlayers = [...mockRoomsStorage[code].players, player];
       mockRoomsStorage[code] = {
         ...mockRoomsStorage[code],
-        players: updatedPlayers
+        players: updatedPlayers,
+        lastUpdated: Date.now()
       };
       
       mockPlayerRooms[playerId] = code;
@@ -172,12 +182,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setGameState(prevState => ({
         ...prevState,
         room: mockRoomsStorage[code],
-        currentPlayer: player
+        currentPlayer: player,
+        lastSync: Date.now()
       }));
       
       setIsCreator(false);
       console.log("Player joined room:", code);
-      console.log("Updated room:", mockRoomsStorage[code]);
+      console.log("Updated room:", JSON.stringify(mockRoomsStorage[code], circularReplacer()));
       
       return true;
     } else if (code && code.length === 6) {
@@ -211,7 +222,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         totalRounds: 3,
         timePerRound: 60,
         status: 'waiting',
-        guesses: []
+        guesses: [],
+        lastUpdated: Date.now()
       };
       
       mockRoomsStorage[code] = mockRoom;
@@ -220,7 +232,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setGameState(prevState => ({
         ...prevState,
         room: mockRoom,
-        currentPlayer: player
+        currentPlayer: player,
+        lastSync: Date.now()
       }));
       
       setIsCreator(false);
@@ -234,20 +247,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const startGame = () => {
     if (!gameState.room) return;
     
-    console.log("Starting game, room is:", gameState.room);
+    console.log("Starting game, room is:", JSON.stringify(gameState.room, circularReplacer()));
     
     // Select a random player to draw first
     const players = [...gameState.room.players];
     const randomIndex = Math.floor(Math.random() * players.length);
     players[randomIndex].isDrawing = true;
     
+    const drawingPlayerId = players[randomIndex].id;
+    
     const updatedRoom: Room = {
       ...gameState.room,
       status: 'playing',
       currentRound: 1,
       players,
-      currentDrawingPlayer: players[randomIndex],
-      guesses: []
+      currentDrawingPlayerId: drawingPlayerId,
+      guesses: [],
+      lastUpdated: Date.now()
     };
     
     // Update in mock storage
@@ -263,16 +279,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setGameState(prevState => ({
         ...prevState,
         room: updatedRoom,
-        wordOptions
+        wordOptions,
+        lastSync: Date.now()
       }));
     } else {
       setGameState(prevState => ({
         ...prevState,
-        room: updatedRoom
+        room: updatedRoom,
+        lastSync: Date.now()
       }));
     }
     
-    console.log("Game started, updated room:", updatedRoom);
+    console.log("Game started, updated room:", JSON.stringify(updatedRoom, circularReplacer()));
   };
 
   // Next round function
@@ -294,6 +312,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         ...gameState.room,
         status: 'gameOver',
         currentRound: gameState.room.totalRounds, // Stay at final round number
+        lastUpdated: Date.now()
       };
       
       // Update in mock storage
@@ -302,6 +321,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setGameState(prevState => ({
         ...prevState,
         room: gameOverRoom,
+        lastSync: Date.now()
       }));
       
       console.log("Game over, final scores:", gameOverRoom.players.map(p => `${p.name}: ${p.score}`).join(', '));
@@ -324,9 +344,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       status: 'playing',
       currentRound: nextRoundNumber,
       players: updatedPlayers,
-      currentDrawingPlayer: nextPlayer,
+      currentDrawingPlayerId: nextPlayer.id,
       guesses: [],
       currentWord: undefined, // Clear the word
+      lastUpdated: Date.now()
     };
     
     // Update in mock storage
@@ -343,13 +364,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
         ...prevState,
         room: updatedRoom,
         wordOptions,
-        guesses: []
+        guesses: [],
+        lastSync: Date.now()
       }));
     } else {
       setGameState(prevState => ({
         ...prevState,
         room: updatedRoom,
-        guesses: []
+        guesses: [],
+        lastSync: Date.now()
       }));
     }
     
@@ -393,7 +416,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const updatedRoom = {
         ...gameState.room,
         players: updatedPlayers,
-        guesses: [...(gameState.room.guesses || []), result]
+        guesses: [...(gameState.room.guesses || []), result],
+        lastUpdated: Date.now()
       };
       
       // Update in mock storage
@@ -402,7 +426,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setGameState(prevState => ({
         ...prevState,
         room: updatedRoom,
-        guesses: [...prevState.guesses, result]
+        guesses: [...prevState.guesses, result],
+        lastSync: Date.now()
       }));
     } else {
       // Check for hint
@@ -421,7 +446,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       
       const updatedRoom = {
         ...gameState.room,
-        guesses: [...(gameState.room.guesses || []), result]
+        guesses: [...(gameState.room.guesses || []), result],
+        lastUpdated: Date.now()
       };
       
       // Update in mock storage
@@ -431,7 +457,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setGameState(prevState => ({
         ...prevState,
         room: updatedRoom,
-        guesses: [...prevState.guesses, result]
+        guesses: [...prevState.guesses, result],
+        lastSync: Date.now()
       }));
     }
     
@@ -445,7 +472,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const updatedRoom: Room = {
       ...gameState.room,
       currentWord: word,
-      timeLeft: gameState.room.timePerRound
+      timeLeft: gameState.room.timePerRound,
+      lastUpdated: Date.now()
     };
     
     // Update in mock storage
@@ -456,7 +484,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       room: updatedRoom,
       currentWord: word,
       wordOptions: null,
-      timeLeft: updatedRoom.timePerRound
+      timeLeft: updatedRoom.timePerRound,
+      lastSync: Date.now()
     }));
     
     // Start the timer
@@ -479,7 +508,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (updatedPlayers.length > 0) {
           mockRoomsStorage[roomCode] = {
             ...mockRoomsStorage[roomCode],
-            players: updatedPlayers
+            players: updatedPlayers,
+            lastUpdated: Date.now()
           };
         } else {
           // If no players left, delete the room
@@ -513,13 +543,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       
       mockRoomsStorage[roomCode] = {
         ...mockRoomsStorage[roomCode],
-        players: updatedPlayers
+        players: updatedPlayers,
+        lastUpdated: Date.now()
       };
     }
     
     setGameState(prevState => ({
       ...prevState,
-      currentPlayer: updatedPlayer
+      currentPlayer: updatedPlayer,
+      lastSync: Date.now()
     }));
   };
 
@@ -539,7 +571,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (mockRoomsStorage[prevState.room.code]) {
           mockRoomsStorage[prevState.room.code] = {
             ...mockRoomsStorage[prevState.room.code],
-            timeLeft: newTimeLeft
+            timeLeft: newTimeLeft,
+            lastUpdated: Date.now()
           };
         }
         
@@ -551,7 +584,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           const updatedRoom: Room = {
             ...prevState.room,
             status: 'roundEnd',
-            timeLeft: 0
+            timeLeft: 0,
+            lastUpdated: Date.now()
           };
           
           // Update in mock storage
@@ -560,7 +594,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           return {
             ...prevState,
             timeLeft: 0,
-            room: updatedRoom
+            room: updatedRoom,
+            lastSync: Date.now()
           };
         }
         
@@ -572,6 +607,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, 1000);
     
     return () => clearInterval(timerInterval);
+  };
+
+  // Helper function to handle circular JSON structures in logs
+  const circularReplacer = () => {
+    const seen = new WeakSet();
+    return (key: string, value: any) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return { message: '[Circular Reference]' };
+        }
+        seen.add(value);
+      }
+      return value;
+    };
   };
 
   const value = {

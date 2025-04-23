@@ -16,9 +16,10 @@ export interface Room {
   timePerRound: number;
   currentWord?: string;
   status: 'waiting' | 'playing' | 'roundEnd' | 'gameOver';
-  currentDrawingPlayer?: Player;
+  currentDrawingPlayerId?: string; // Changed to store ID instead of circular reference
   guesses?: GuessResult[];
   timeLeft?: number;
+  lastUpdated?: number; // Add timestamp for updates
 }
 
 export interface GuessResult {
@@ -43,4 +44,5 @@ export interface GameState {
   timeLeft: number;
   guesses: GuessResult[];
   isConnected: boolean;
+  lastSync?: number; // Add timestamp for last sync
 }
