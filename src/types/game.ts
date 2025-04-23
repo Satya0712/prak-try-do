@@ -17,6 +17,8 @@ export interface Room {
   currentWord?: string;
   status: 'waiting' | 'playing' | 'roundEnd' | 'gameOver';
   currentDrawingPlayer?: Player;
+  guesses?: GuessResult[];
+  timeLeft?: number;
 }
 
 export interface GuessResult {

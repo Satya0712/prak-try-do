@@ -14,6 +14,7 @@ interface GameContextType {
   leaveRoom: () => void;
   setPlayerName: (name: string) => void;
   isCreator: boolean;
+  syncRoomState: () => void;
 }
 
 const mockWords = [
@@ -22,6 +23,10 @@ const mockWords = [
   'notebook', 'ocean', 'pizza', 'queen', 'robot', 'sun', 'tree', 
   'umbrella', 'violin', 'watermelon', 'xylophone', 'yacht', 'zebra'
 ];
+
+// Mock room storage to simulate a server
+const mockRoomsStorage: { [code: string]: Room } = {};
+const mockPlayerRooms: { [playerId: string]: string } = {};
 
 const initialGameState: GameState = {
   room: null,
@@ -46,17 +51,57 @@ export function useGame() {
 export function GameProvider({ children }: { children: ReactNode }) {
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [isCreator, setIsCreator] = useState(false);
+  const [syncInterval, setSyncInterval] = useState<NodeJS.Timeout | null>(null);
 
   // In a real application, this would connect to a WebSocket server
   useEffect(() => {
     // Simulating connection
     setGameState(prevState => ({ ...prevState, isConnected: true }));
     
+    // Start syncing room state every 2 seconds
+    const interval = setInterval(() => {
+      syncRoomState();
+    }, 2000);
+    
+    setSyncInterval(interval);
+    
     return () => {
       // Clean up WebSocket connection
       setGameState(prevState => ({ ...prevState, isConnected: false }));
+      if (syncInterval) {
+        clearInterval(syncInterval);
+      }
     };
   }, []);
+
+  // Sync room state with mock storage
+  const syncRoomState = () => {
+    if (!gameState.room || !gameState.currentPlayer) return;
+    
+    const roomCode = gameState.room.code;
+    if (mockRoomsStorage[roomCode]) {
+      console.log("Syncing room state:", mockRoomsStorage[roomCode]);
+      
+      // Update local state with the "server" state
+      setGameState(prevState => {
+        const updatedRoom = mockRoomsStorage[roomCode];
+        
+        // Find the current player in the updated room
+        const updatedCurrentPlayer = updatedRoom.players.find(
+          p => p.id === prevState.currentPlayer?.id
+        );
+        
+        return {
+          ...prevState,
+          room: updatedRoom,
+          currentPlayer: updatedCurrentPlayer || prevState.currentPlayer,
+          currentWord: updatedRoom.currentWord || prevState.currentWord,
+          timeLeft: updatedRoom.timeLeft || prevState.timeLeft,
+          guesses: [...(updatedRoom.guesses || [])]
+        };
+      });
+    }
+  };
 
   // Create a new room
   const createRoom = (playerName: string, rounds: number, timePerRound: number): Room => {
@@ -78,8 +123,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
       currentRound: 0,
       totalRounds: rounds,
       timePerRound: timePerRound,
-      status: 'waiting'
+      status: 'waiting',
+      guesses: []
     };
+    
+    // Store in mock storage
+    mockRoomsStorage[roomCode] = newRoom;
+    mockPlayerRooms[playerId] = roomCode;
     
     setGameState(prevState => ({
       ...prevState,
@@ -88,14 +138,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }));
     
     setIsCreator(true);
+    console.log("Room created with code:", roomCode);
+    console.log("Mock rooms:", mockRoomsStorage);
+    
     return newRoom;
   };
 
   // Join an existing room
   const joinRoom = (code: string, playerName: string): boolean => {
-    // In a real app, this would send a WebSocket request to join the room
-    // For demonstration, we'll simulate a successful join if the code format is valid
-    if (code && code.length === 6) {
+    // Check if room exists in our mock storage
+    if (mockRoomsStorage[code]) {
+      console.log("Room found:", mockRoomsStorage[code]);
       const playerId = uuidv4();
       
       const player: Player = {
@@ -106,7 +159,39 @@ export function GameProvider({ children }: { children: ReactNode }) {
         isRoomCreator: false
       };
       
-      // Mock room for demo
+      // Update room with new player
+      const updatedPlayers = [...mockRoomsStorage[code].players, player];
+      mockRoomsStorage[code] = {
+        ...mockRoomsStorage[code],
+        players: updatedPlayers
+      };
+      
+      mockPlayerRooms[playerId] = code;
+      
+      setGameState(prevState => ({
+        ...prevState,
+        room: mockRoomsStorage[code],
+        currentPlayer: player
+      }));
+      
+      setIsCreator(false);
+      console.log("Player joined room:", code);
+      console.log("Updated room:", mockRoomsStorage[code]);
+      
+      return true;
+    } else if (code && code.length === 6) {
+      // If code format is valid but doesn't exist, create a mock room
+      const playerId = uuidv4();
+      
+      const player: Player = {
+        id: playerId,
+        name: playerName,
+        score: 0,
+        isDrawing: false,
+        isRoomCreator: false
+      };
+      
+      // Mock room for demo with another player as creator
       const mockRoom: Room = {
         id: uuidv4(),
         code: code,
@@ -124,8 +209,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
         currentRound: 0,
         totalRounds: 3,
         timePerRound: 60,
-        status: 'waiting'
+        status: 'waiting',
+        guesses: []
       };
+      
+      mockRoomsStorage[code] = mockRoom;
+      mockPlayerRooms[playerId] = code;
       
       setGameState(prevState => ({
         ...prevState,
@@ -133,15 +222,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
         currentPlayer: player
       }));
       
-      setIsCreator(false);  // Explicitly set to false for joiners
+      setIsCreator(false);
       return true;
     }
+    
     return false;
   };
 
   // Start the game (only available to room creator)
   const startGame = () => {
     if (!gameState.room) return;
+    
+    console.log("Starting game, room is:", gameState.room);
     
     // Select a random player to draw first
     const players = [...gameState.room.players];
@@ -153,8 +245,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       status: 'playing',
       currentRound: 1,
       players,
-      currentDrawingPlayer: players[randomIndex]
+      currentDrawingPlayer: players[randomIndex],
+      guesses: []
     };
+    
+    // Update in mock storage
+    mockRoomsStorage[updatedRoom.code] = updatedRoom;
     
     // If the current user is the drawing player, give them word options
     if (gameState.currentPlayer && gameState.currentPlayer.id === players[randomIndex].id) {
@@ -174,6 +270,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         room: updatedRoom
       }));
     }
+    
+    console.log("Game started, updated room:", updatedRoom);
   };
 
   // Submit a guess for the current word
@@ -210,12 +308,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
         return player;
       });
       
+      const updatedRoom = {
+        ...gameState.room,
+        players: updatedPlayers,
+        guesses: [...(gameState.room.guesses || []), result]
+      };
+      
+      // Update in mock storage
+      mockRoomsStorage[updatedRoom.code] = updatedRoom;
+      
       setGameState(prevState => ({
         ...prevState,
-        room: {
-          ...prevState.room!,
-          players: updatedPlayers
-        },
+        room: updatedRoom,
         guesses: [...prevState.guesses, result]
       }));
     } else {
@@ -233,9 +337,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
       
       const matchPercentage = (matchCount / currentWord.length) * 100;
       
+      const updatedRoom = {
+        ...gameState.room,
+        guesses: [...(gameState.room.guesses || []), result]
+      };
+      
+      // Update in mock storage
+      mockRoomsStorage[updatedRoom.code] = updatedRoom;
+      
       // Save the guess for displaying in the chat
       setGameState(prevState => ({
         ...prevState,
+        room: updatedRoom,
         guesses: [...prevState.guesses, result]
       }));
     }
@@ -247,15 +360,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const selectWord = (word: string) => {
     if (!gameState.room || !gameState.currentPlayer?.isDrawing) return;
     
+    const updatedRoom = {
+      ...gameState.room,
+      currentWord: word,
+      timeLeft: gameState.room.timePerRound
+    };
+    
+    // Update in mock storage
+    mockRoomsStorage[updatedRoom.code] = updatedRoom;
+    
     setGameState(prevState => ({
       ...prevState,
-      room: {
-        ...prevState.room!,
-        currentWord: word
-      },
+      room: updatedRoom,
       currentWord: word,
       wordOptions: null,
-      timeLeft: prevState.room!.timePerRound
+      timeLeft: updatedRoom.timePerRound
     }));
     
     // Start the timer
@@ -264,18 +383,57 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // Leave the current room
   const leaveRoom = () => {
+    if (gameState.room && gameState.currentPlayer) {
+      const roomCode = gameState.room.code;
+      const playerId = gameState.currentPlayer.id;
+      
+      // Remove player from room
+      if (mockRoomsStorage[roomCode]) {
+        const updatedPlayers = mockRoomsStorage[roomCode].players.filter(
+          p => p.id !== playerId
+        );
+        
+        // If there are still players, update the room
+        if (updatedPlayers.length > 0) {
+          mockRoomsStorage[roomCode] = {
+            ...mockRoomsStorage[roomCode],
+            players: updatedPlayers
+          };
+        } else {
+          // If no players left, delete the room
+          delete mockRoomsStorage[roomCode];
+        }
+      }
+      
+      // Remove player-room association
+      delete mockPlayerRooms[playerId];
+    }
+    
     setGameState(initialGameState);
     setIsCreator(false);
   };
 
   // Set the player name
   const setPlayerName = (name: string) => {
-    if (!gameState.currentPlayer) return;
+    if (!gameState.currentPlayer || !gameState.room) return;
     
     const updatedPlayer = {
       ...gameState.currentPlayer,
       name
     };
+    
+    // Update player in room
+    const roomCode = gameState.room.code;
+    if (mockRoomsStorage[roomCode]) {
+      const updatedPlayers = mockRoomsStorage[roomCode].players.map(p => 
+        p.id === updatedPlayer.id ? updatedPlayer : p
+      );
+      
+      mockRoomsStorage[roomCode] = {
+        ...mockRoomsStorage[roomCode],
+        players: updatedPlayers
+      };
+    }
     
     setGameState(prevState => ({
       ...prevState,
@@ -295,17 +453,32 @@ export function GameProvider({ children }: { children: ReactNode }) {
         
         const newTimeLeft = prevState.timeLeft - 1;
         
+        // Update time in mock storage
+        if (mockRoomsStorage[prevState.room.code]) {
+          mockRoomsStorage[prevState.room.code] = {
+            ...mockRoomsStorage[prevState.room.code],
+            timeLeft: newTimeLeft
+          };
+        }
+        
         // If time runs out, end the round
         if (newTimeLeft <= 0) {
           clearInterval(timerInterval);
           // Handle round end - in a real app, this would be done by the server
+          
+          const updatedRoom = {
+            ...prevState.room,
+            status: 'roundEnd',
+            timeLeft: 0
+          };
+          
+          // Update in mock storage
+          mockRoomsStorage[updatedRoom.code] = updatedRoom;
+          
           return {
             ...prevState,
             timeLeft: 0,
-            room: {
-              ...prevState.room,
-              status: 'roundEnd'
-            }
+            room: updatedRoom
           };
         }
         
@@ -328,7 +501,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     selectWord,
     leaveRoom,
     setPlayerName,
-    isCreator
+    isCreator,
+    syncRoomState
   };
 
   return (

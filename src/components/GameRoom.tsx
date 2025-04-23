@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGame } from '@/contexts/GameContext';
@@ -11,13 +10,13 @@ import { Progress } from '@/components/ui/progress';
 import { Play, Clock, Crown } from 'lucide-react';
 
 export const GameRoom = () => {
-  const { gameState, isCreator, startGame, submitGuess, selectWord, leaveRoom } = useGame();
+  const { gameState, isCreator, startGame, submitGuess, selectWord, leaveRoom, syncRoomState } = useGame();
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
   const [guess, setGuess] = useState('');
   const [selectedWord, setSelectedWord] = useState('');
   
-  const { room, currentPlayer, wordOptions, timeLeft } = gameState;
+  const { room, currentPlayer, wordOptions, timeLeft, guesses } = gameState;
   
   // For debugging
   useEffect(() => {
@@ -32,6 +31,15 @@ export const GameRoom = () => {
       navigate('/');
     }
   }, [room, currentPlayer, navigate]);
+
+  // Force sync room state when component mounts and whenever relevant state changes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncRoomState();
+    }, 1000); // Check for updates every second
+    
+    return () => clearInterval(interval);
+  }, [syncRoomState, roomCode]);
   
   // Handle room not found
   if (!room || !roomCode) {
@@ -58,7 +66,7 @@ export const GameRoom = () => {
     e.preventDefault();
     if (!guess.trim()) return;
     
-    const result = submitGuess(guess);
+    submitGuess(guess);
     setGuess('');
   };
 
@@ -248,10 +256,10 @@ export const GameRoom = () => {
                   <CardTitle className="text-lg">Guesses</CardTitle>
                 </CardHeader>
                 <CardContent className="h-[200px] overflow-y-auto space-y-2">
-                  {gameState.guesses.length === 0 ? (
+                  {(!gameState.guesses || gameState.guesses.length === 0) && (!room.guesses || room.guesses.length === 0) ? (
                     <p className="text-muted-foreground text-center">No guesses yet</p>
                   ) : (
-                    gameState.guesses.map((guessResult, index) => (
+                    (room.guesses || gameState.guesses || []).map((guessResult, index) => (
                       <div 
                         key={index} 
                         className={`p-2 rounded-md ${
