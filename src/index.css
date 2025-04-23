@@ -99,3 +99,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  .game-gradient {
+    @apply bg-gradient-to-br from-game-light via-white to-game-light;
+  }
+  
+  .drawing-canvas {
+    touch-action: none;
+    border: 2px solid #e5e7eb;
+    border-radius: 0.5rem;
+    @apply bg-white shadow-lg;
+  }
+}
